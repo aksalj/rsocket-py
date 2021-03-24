@@ -67,12 +67,14 @@ class BaseRequestHandler(RequestHandler):
 class RSocket:
     def __init__(self, reader, writer, *,
                  handler_factory=BaseRequestHandler, loop=None, server=True,
-                 data_encoding =b'utf-8', metadata_encoding=b'utf-8',
-                 setup_payload=None):
+                 data_encoding=b'utf-8', metadata_encoding=b'utf-8',
+                 setup_payload=None, error_handler=None,
+                 keep_alive_milliseconds=30000, max_lifetime_milliseconds=120000):
         self._reader = reader
         self._writer = writer
         self._server = server
         self._handler = handler_factory(self)
+        self._error_handler = error_handler
 
         self._next_stream = 2 if self._server else 1
         self._streams = {}
@@ -86,8 +88,8 @@ class RSocket:
             setup.flags_lease = False
             setup.flags_strict = True
 
-            setup.keep_alive_milliseconds = 30000
-            setup.max_lifetime_milliseconds = 120000
+            setup.keep_alive_milliseconds = keep_alive_milliseconds
+            setup.max_lifetime_milliseconds = max_lifetime_milliseconds
             # setup frame: data encoding, metadata encoding, setup payload
             setup.data_encoding = data_encoding
             setup.metadata_encoding = metadata_encoding
@@ -155,7 +157,9 @@ class RSocket:
                     if isinstance(frame, CancelFrame):
                         pass
                     elif isinstance(frame, ErrorFrame):
-                        pass
+                        if self._error_handler is not None:
+                            self._error_handler(Payload(frame.data, frame.metadata))
+                            continue
                     elif isinstance(frame, KeepAliveFrame):
                         if frame.flags_respond:
                             frame.flags_respond = False
